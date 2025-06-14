@@ -8,67 +8,83 @@ import javax.imageio.ImageIO;
 import java.io.File;
 import java.io.IOException;
 
+/**
+ * Die to Live - Zombie Defense Game
+ * 
+ * A strategy game where players defend their base against waves of zombies.
+ * Features tower placement, resource management, and a unique Phase 2 mechanic.
+ * Players must survive 40 total waves to win.
+ */
 public class DieToLive extends JPanel implements Runnable, MouseListener, MouseMotionListener, KeyListener {
-    // Game Constants
-    private static final int GRID_SIZE = 15;
-    private static final int CELL_SIZE = 50;
-    private static final int BASE_HEALTH = 100;
-    private static final int START_COINS = 100;
+    // ====================== GAME CONSTANTS ======================
+    private static final int GRID_SIZE = 15;          // Size of the game grid (15x15 cells)
+    private static final int CELL_SIZE = 50;           // Size of each grid cell in pixels
+    private static final int BASE_HEALTH = 100;        // Starting health for player's base
+    private static final int START_COINS = 100;         // Starting coins for the player
     
-    // Game State
-    private enum GameState { BUILD, COMBAT, PHASE2, GAME_OVER, WIN }
-    private GameState state = GameState.BUILD;
-    private int wave = 0;
-    private int coins = START_COINS;
-    private int baseHealth = BASE_HEALTH;
-    private boolean isPaused = true;
+    // ====================== GAME STATE VARIABLES ======================
+    private enum GameState { BUILD, COMBAT, PHASE2, GAME_OVER, WIN } // Possible game states
+    private GameState state = GameState.BUILD;         // Current game state
+    private int wave = 0;                              // Current wave number
+    private int coins = START_COINS;                   // Player's coin count
+    private int baseHealth = BASE_HEALTH;              // Current base health
+    private boolean isPaused = true;                   // Whether game is paused
     
-    // Tower Data
-    private enum TowerType { ARROW, BOMB, ICE, MINIGUN }
-    private TowerType selectedTower = TowerType.ARROW;
-    private final Map<Point, Tower> towers = new HashMap<>();
-    private Tower draggedTower = null;
-    private Point dragPoint = null;
-    private Tower selectedTowerInstance = null;
-    private Point selectedTowerPos = null;
+    // ====================== TOWER SYSTEM ======================
+    private enum TowerType { ARROW, BOMB, ICE, MINIGUN } // Available tower types
+    private TowerType selectedTower = TowerType.ARROW; // Currently selected tower for placement
+    private final Map<Point, Tower> towers = new HashMap<>(); // Map of placed towers (position -> tower)
+    private Tower draggedTower = null;                 // Tower being dragged for placement
+    private Point dragPoint = null;                    // Position where tower is being dragged
+    private Tower selectedTowerInstance = null;        // Currently selected tower for upgrades
+    private Point selectedTowerPos = null;             // Position of selected tower
     
-    // Zombie Data
-    private final List<Zombie> zombies = new ArrayList<>();
-    private final int[][] path = {{0,7}, {14,7}}; // Simple horizontal path
-    private int zombiesToSpawn = 0;
-    private int zombieSpawnTimer = 0;
+    // ====================== ZOMBIE SYSTEM ======================
+    private final List<Zombie> zombies = new ArrayList<>(); // List of active zombies
+    // Path that zombies follow (from right to left at y=7)
+    private final int[][] path = {{0,7}, {14,7}}; 
+    private int zombiesToSpawn = 0;                    // Zombies remaining to spawn in current wave
+    private int zombieSpawnTimer = 0;                  // Timer between zombie spawns
     
-    // Projectiles
-    private final List<Projectile> projectiles = new ArrayList<>();
+    // ====================== PROJECTILE SYSTEM ======================
+    private final List<Projectile> projectiles = new ArrayList<>(); // Active projectiles
     
-    // Phase 2
-    private int clickDamage = 1;
-    private int clickUpgradeLevel = 0;
-    private boolean phase2Transition = false;
-    private float phase2EffectAlpha = 0f;
+    // ====================== PHASE 2 MECHANICS ======================
+    private int clickDamage = 1;                       // Damage per click in Phase 2
+    private int clickUpgradeLevel = 0;                 // Current upgrade level for click damage
+    private boolean phase2Transition = false;          // Whether Phase 2 transition is happening
+    private float phase2EffectAlpha = 0f;              // Alpha value for Phase 2 visual effect
     
-    // UI
-    private final Color validColor = new Color(0, 255, 0, 100);
-    private final Color invalidColor = new Color(255, 0, 0, 100);
-    private Point hoverCell = new Point(-1, -1);
+    // ====================== UI VARIABLES ======================
+    private final Color validColor = new Color(0, 255, 0, 100);   // Color for valid placement
+    private final Color invalidColor = new Color(255, 0, 0, 100); // Color for invalid placement
+    private Point hoverCell = new Point(-1, -1);       // Grid cell currently hovered by mouse
     
-    // Tower costs
-    private final int ARROW_COST = 30;
-    private final int BOMB_COST = 40;
-    private final int ICE_COST = 25;
-    private final int MINIGUN_COST = 300; // Increased cost
+    // ====================== TOWER ECONOMY ======================
+    private final int ARROW_COST = 30;     // Cost to place Arrow Tower
+    private final int BOMB_COST = 40;      // Cost to place Bomb Tower
+    private final int ICE_COST = 25;       // Cost to place Ice Tower
+    private final int MINIGUN_COST = 300;   // Cost to place Minigun Tower
     
-    // Game fonts
-    private final Font titleFont = new Font("Arial", Font.BOLD, 36);
-    private final Font infoFont = new Font("Arial", Font.PLAIN, 20);
-    private final Font waveFont = new Font("Arial", Font.BOLD, 28);
+    // ====================== FONTS ======================
+    private final Font titleFont = new Font("Arial", Font.BOLD, 36); // Font for titles
+    private final Font infoFont = new Font("Arial", Font.PLAIN, 20); // Font for info text
+    private final Font waveFont = new Font("Arial", Font.BOLD, 28);  // Font for wave text
     
-    // Zombie types
+    // ====================== ZOMBIE TYPES ======================
+    /**
+     * Enum defining different zombie types with their attributes:
+     * - reward: Coins earned when killed
+     * - damage: Damage dealt to base
+     * - speed: Movement speed
+     * - color: Visual color
+     * - health: Hit points
+     */
     private enum ZombieType {
-        BASIC(10, 1, 2, Color.GRAY, 20),
-        SPEEDY(7, 2, 1, Color.CYAN, 15),
-        ABNORMAL(15, 3, 1, Color.RED, 40),
-        CHARGED(20, 5, 1, Color.YELLOW, 60);
+        BASIC(10, 1, 2, Color.GRAY, 20),     // Basic zombie
+        SPEEDY(7, 2, 1, Color.CYAN, 15),      // Fast but weak
+        ABNORMAL(15, 3, 1, Color.RED, 40),    // Strong against bomb towers
+        CHARGED(20, 5, 1, Color.YELLOW, 60);   // Tough and powerful
         
         final int reward;
         final int damage;
@@ -85,36 +101,40 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
     }
     
-    // Particle effects
-    private final List<Particle> particles = new ArrayList<>();
+    // ====================== VISUAL EFFECTS ======================
+    private final List<Particle> particles = new ArrayList<>(); // List of active particles
     
-    // Path grid for validation
-    private final boolean[][] pathGrid = new boolean[GRID_SIZE][GRID_SIZE];
+    // ====================== PATH VALIDATION ======================
+    private final boolean[][] pathGrid = new boolean[GRID_SIZE][GRID_SIZE]; // Grid marking path cells
     
-    // Tower images
-    private Image arrowImage, bombImage, iceImage, minigunImage;
+    // ====================== TOWER IMAGES ======================
+    private Image arrowImage, bombImage, iceImage, minigunImage; // Images for towers
     
-    // Popup state
-    private Rectangle popupRect = null;
+    // ====================== POPUP MANAGEMENT ======================
+    private Rectangle popupRect = null; // Rectangle area of the active tower popup
     
+    // ====================== CONSTRUCTOR ======================
     public DieToLive() {
+        // Set panel size based on grid dimensions
         setPreferredSize(new Dimension(GRID_SIZE * CELL_SIZE, GRID_SIZE * CELL_SIZE + 100));
+        
+        // Register input listeners
         addMouseListener(this);
         addMouseMotionListener(this);
         addKeyListener(this);
-        setFocusable(true);
+        setFocusable(true); // Ensure panel can receive key events
         
-        // Initialize path grid
+        // Initialize path grid - mark cells that are part of the zombie path
         for (int i = 0; i < path.length - 1; i++) {
             int[] p1 = path[i];
             int[] p2 = path[i+1];
-            if (p1[0] == p2[0]) { // Vertical
+            if (p1[0] == p2[0]) { // Vertical path segment
                 int minY = Math.min(p1[1], p2[1]);
                 int maxY = Math.max(p1[1], p2[1]);
                 for (int y = minY; y <= maxY; y++) {
                     pathGrid[p1[0]][y] = true;
                 }
-            } else { // Horizontal
+            } else { // Horizontal path segment
                 int minX = Math.min(p1[0], p2[0]);
                 int maxX = Math.max(p1[0], p2[0]);
                 for (int x = minX; x <= maxX; x++) {
@@ -123,7 +143,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             }
         }
         
-        // Load tower images
+        // Load tower images if available
         try {
             arrowImage = ImageIO.read(new File("arrow_tower.png")).getScaledInstance(CELL_SIZE - 10, CELL_SIZE - 10, Image.SCALE_SMOOTH);
             bombImage = ImageIO.read(new File("bomb_tower.png")).getScaledInstance(CELL_SIZE - 10, CELL_SIZE - 10, Image.SCALE_SMOOTH);
@@ -134,44 +154,52 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             arrowImage = bombImage = iceImage = minigunImage = null;
         }
         
+        // Start game loop thread
         new Thread(this).start();
     }
 
+    // ====================== GAME LOOP ======================
     @Override
     public void run() {
         long lastTime = System.nanoTime();
-        final double ns = 1000000000.0 / 60.0; // 60 updates per second
+        final double ns = 1000000000.0 / 60.0; // Nanoseconds per frame (60 FPS)
         double delta = 0;
         
+        // Main game loop
         while (true) {
             long now = System.nanoTime();
             delta += (now - lastTime) / ns;
             lastTime = now;
             
+            // Update game state based on elapsed time
             while (delta >= 1) {
-                tick();
+                tick(); // Update game logic
                 delta--;
             }
             
-            repaint();
+            repaint(); // Refresh display
             try {
-                Thread.sleep(2);
+                Thread.sleep(2); // Prevent thread from hogging CPU
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
     }
 
+    // ====================== GAME LOGIC UPDATE ======================
+    /**
+     * Updates all game objects and state
+     */
     private void tick() {
         // Update projectiles
         for (Iterator<Projectile> it = projectiles.iterator(); it.hasNext();) {
             Projectile p = it.next();
             p.update();
             if (p.hasReachedTarget()) {
-                p.hitTarget();
+                p.hitTarget(); // Apply damage when projectile hits
                 it.remove();
             } else if (p.isOffScreen()) {
-                it.remove();
+                it.remove(); // Clean up off-screen projectiles
             }
         }
         
@@ -180,21 +208,22 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             Particle p = it.next();
             p.update();
             if (!p.isAlive()) {
-                it.remove();
+                it.remove(); // Remove dead particles
             }
         }
         
-        // Wave progression
+        // Wave progression logic
         if (!isPaused && state == GameState.COMBAT && zombies.isEmpty() && zombiesToSpawn == 0) {
+            // Return to build phase after clearing wave
             state = GameState.BUILD;
-            coins += 30 + 15 * wave; // Wave completion bonus
+            coins += 30 + 15 * wave; // Reward coins for surviving the wave
             isPaused = true;
         }
 
-        // Spawn zombies
+        // Zombie spawning logic
         if (state == GameState.COMBAT && zombiesToSpawn > 0) {
             zombieSpawnTimer++;
-            if (zombieSpawnTimer >= 30) { // Spawn every half second
+            if (zombieSpawnTimer >= 30) { // Spawn every half second (60 FPS)
                 spawnZombie();
                 zombieSpawnTimer = 0;
             }
@@ -206,18 +235,20 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             Zombie z = zit.next();
             z.update();
             
-            // Check if reached base
+            // Check if zombie reached base
             if (z.x <= CELL_SIZE) {
-                baseHealth -= z.damage;
-                createBloodEffect(z.x, z.y);
-                zit.remove();
+                baseHealth -= z.damage; // Damage the base
+                createBloodEffect(z.x, z.y); // Visual effect
+                zit.remove(); // Remove zombie
+                
+                // Check if base destroyed
                 if (baseHealth <= 0) {
                     handleBaseDestroyed();
                 }
             }
         }
 
-        // Update towers
+        // Update towers - make them shoot at zombies
         for (Map.Entry<Point, Tower> entry : towers.entrySet()) {
             Point pos = entry.getKey();
             Tower t = entry.getValue();
@@ -226,67 +257,83 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
 
         // Phase 2 transition effect
         if (phase2Transition) {
-            phase2EffectAlpha += 0.02f;
+            phase2EffectAlpha += 0.02f; // Increase effect opacity
             if (phase2EffectAlpha >= 1.0f) {
                 phase2Transition = false;
-                state = GameState.PHASE2;
-                clickDamage = 1; // Reset click damage for phase 2
+                state = GameState.PHASE2; // Enter Phase 2
+                clickDamage = 1; // Reset click damage
                 clickUpgradeLevel = 0;
                 
-                // Add some particles for effect
+                // Add transition particles
                 for (int i = 0; i < 100; i++) {
                     particles.add(new Particle(GRID_SIZE * CELL_SIZE / 2, GRID_SIZE * CELL_SIZE / 2, Color.RED));
                 }
             }
         }
         
-        // Win condition
+        // Win condition check
         if (wave >= 40) {
             state = GameState.WIN;
         }
     }
 
+    // ====================== GAME MECHANICS ======================
+    /**
+     * Spawns a new zombie based on current wave difficulty
+     */
     private void spawnZombie() {
         ZombieType type;
+        // Determine zombie type based on wave progression
         if (wave < 5) {
             type = ZombieType.BASIC;
         } else if (wave < 10) {
             type = wave % 2 == 0 ? ZombieType.BASIC : ZombieType.SPEEDY;
         } else if (wave < 15) {
-            type = wave % 3 == 0 ? ZombieType.BASIC : wave % 3 == 1 ? ZombieType.SPEEDY : ZombieType.ABNORMAL;
+            type = wave % 3 == 0 ? ZombieType.BASIC : 
+                   wave % 3 == 1 ? ZombieType.SPEEDY : ZombieType.ABNORMAL;
         } else {
             int rand = (int)(Math.random() * 4);
-            type = ZombieType.values()[rand];
+            type = ZombieType.values()[rand]; // Random zombie type
         }
         
-        zombies.add(new Zombie(type));
-        zombiesToSpawn--;
+        zombies.add(new Zombie(type)); // Add new zombie
+        zombiesToSpawn--; // Decrement spawn counter
     }
     
+    /**
+     * Creates a blood effect at the specified position
+     */
     private void createBloodEffect(float x, float y) {
         for (int i = 0; i < 20; i++) {
-            particles.add(new Particle(x, y, Color.RED));
+            particles.add(new Particle(x, y, Color.RED)); // Add blood particles
         }
     }
 
+    /**
+     * Handles base destruction - triggers Phase 2 or game over
+     */
     private void handleBaseDestroyed() {
         if (wave >= 20) {
-            phase2Transition = true;
-            baseHealth = 50; // Give player some health for phase 2
+            phase2Transition = true; // Trigger Phase 2 transition
+            baseHealth = 50; // Give player health for Phase 2
         } else {
-            state = GameState.GAME_OVER;
+            state = GameState.GAME_OVER; // Game over if base destroyed before wave 20
         }
     }
 
+    /**
+     * Starts the next wave of zombies
+     */
     private void startNextWave() {
         if (state == GameState.GAME_OVER || state == GameState.WIN) return;
         
-        wave++;
-        zombiesToSpawn = 5 + wave; // Scaling difficulty
-        state = GameState.COMBAT;
-        isPaused = false;
+        wave++; // Advance wave counter
+        zombiesToSpawn = 5 + wave; // Scale difficulty with wave number
+        state = GameState.COMBAT; // Enter combat state
+        isPaused = false; // Unpause game
     }
 
+    // ====================== RENDERING ======================
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -294,33 +341,33 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         // Draw background
-        g2d.setColor(new Color(20, 30, 20));
+        g2d.setColor(new Color(20, 30, 20)); // Dark green background
         g2d.fillRect(0, 0, getWidth(), getHeight());
         
-        // Draw grid
+        // Draw grid cells
         for (int x = 0; x < GRID_SIZE; x++) {
             for (int y = 0; y < GRID_SIZE; y++) {
-                g2d.setColor(new Color(40, 50, 40));
+                g2d.setColor(new Color(40, 50, 40)); // Grid cell color
                 g2d.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                g2d.setColor(new Color(30, 40, 30));
+                g2d.setColor(new Color(30, 40, 30)); // Grid line color
                 g2d.drawRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
             }
         }
 
-        // Draw path
-        g2d.setColor(new Color(100, 70, 30)); // Brown path
+        // Draw zombie path
+        g2d.setColor(new Color(100, 70, 30)); // Brown path color
         for (int i = 0; i < path.length - 1; i++) {
             int[] p1 = path[i];
             int[] p2 = path[i+1];
             
             // Connect path segments
-            if (p1[0] == p2[0]) { // Vertical
+            if (p1[0] == p2[0]) { // Vertical segment
                 int minY = Math.min(p1[1], p2[1]);
                 int maxY = Math.max(p1[1], p2[1]);
                 for (int y = minY; y <= maxY; y++) {
                     g2d.fillRect(p1[0] * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
                 }
-            } else { // Horizontal
+            } else { // Horizontal segment
                 int minX = Math.min(p1[0], p2[0]);
                 int maxX = Math.max(p1[0], p2[0]);
                 for (int x = minX; x <= maxX; x++) {
@@ -329,64 +376,64 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             }
         }
 
-        // Draw base
-        g2d.setColor(new Color(180, 0, 0));
+        // Draw player base
+        g2d.setColor(new Color(180, 0, 0)); // Red base
         g2d.fillRect(0, 7 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
         g2d.setColor(Color.WHITE);
         g2d.setFont(new Font("Arial", Font.BOLD, 12));
-        g2d.drawString("BASE", 5, 7 * CELL_SIZE + 25);
+        g2d.drawString("BASE", 5, 7 * CELL_SIZE + 25); // Base label
 
-        // Draw towers
+        // Draw all towers
         for (Map.Entry<Point, Tower> entry : towers.entrySet()) {
             entry.getValue().draw(g2d, entry.getKey());
         }
 
-        // Draw projectiles
+        // Draw all projectiles
         for (Projectile p : projectiles) {
             p.draw(g2d);
         }
         
-        // Draw zombies
+        // Draw all zombies
         for (Zombie z : zombies) {
             z.draw(g2d);
         }
         
-        // Draw particles
+        // Draw all particles
         for (Particle p : particles) {
             p.draw(g2d);
         }
 
-        // Draw drag preview
+        // Draw tower drag preview
         if (dragPoint != null && draggedTower != null) {
             boolean valid = isValidPlacement(dragPoint);
-            g2d.setColor(valid ? validColor : invalidColor);
+            g2d.setColor(valid ? validColor : invalidColor); // Green/red based on validity
             g2d.fillRect(dragPoint.x * CELL_SIZE, dragPoint.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-            draggedTower.draw(g2d, dragPoint);
+            draggedTower.draw(g2d, dragPoint); // Draw the tower preview
         }
 
-        // Draw hover preview
+        // Draw cell hover highlight
         if (hoverCell.x >= 0 && draggedTower == null) {
-            g2d.setColor(new Color(255, 255, 255, 50));
+            g2d.setColor(new Color(255, 255, 255, 50)); // Semi-transparent white
             g2d.fillRect(hoverCell.x * CELL_SIZE, hoverCell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
         }
 
-        // UI Panel
-        g2d.setColor(new Color(30, 30, 30, 220));
+        // Draw UI panel at bottom
+        g2d.setColor(new Color(30, 30, 30, 220)); // Semi-transparent dark background
         g2d.fillRect(0, GRID_SIZE * CELL_SIZE, getWidth(), 100);
         
         // Draw UI text
         g2d.setColor(Color.WHITE);
         g2d.setFont(infoFont);
-        g2d.drawString("Coins: " + coins, 20, GRID_SIZE * CELL_SIZE + 30);
-        g2d.drawString("Wave: " + wave + "/40", 20, GRID_SIZE * CELL_SIZE + 60);
-        g2d.drawString("Base: " + baseHealth, 20, GRID_SIZE * CELL_SIZE + 90);
+        g2d.drawString("Coins: " + coins, 20, GRID_SIZE * CELL_SIZE + 30); // Coin counter
+        g2d.drawString("Wave: " + wave + "/40", 20, GRID_SIZE * CELL_SIZE + 60); // Wave counter
+        g2d.drawString("Base: " + baseHealth, 20, GRID_SIZE * CELL_SIZE + 90); // Health counter
         
         // Draw tower info
-        g2d.drawString("Selected: " + selectedTower, 200, GRID_SIZE * CELL_SIZE + 30);
-        String clickInfo = state == GameState.PHASE2 ? "Click Dmg: " + clickDamage : "";
+        g2d.drawString("Selected: " + selectedTower, 200, GRID_SIZE * CELL_SIZE + 30); // Selected tower
+        String clickInfo = state == GameState.PHASE2 ? "Click Dmg: " + clickDamage : ""; // Phase 2 damage
         g2d.drawString(clickInfo, 200, GRID_SIZE * CELL_SIZE + 60);
         
-        // Draw controls
+        // Draw controls help text
         g2d.setFont(new Font("Arial", Font.PLAIN, 14));
         g2d.drawString("1: Arrow ($" + ARROW_COST + ")", 400, GRID_SIZE * CELL_SIZE + 30);
         g2d.drawString("2: Bomb ($" + BOMB_COST + ")", 400, GRID_SIZE * CELL_SIZE + 50);
@@ -396,76 +443,100 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         
         // Draw game state messages
         if (state == GameState.GAME_OVER) {
-            drawScreenOverlay(g2d, new Color(100, 0, 0, 150));
+            drawScreenOverlay(g2d, new Color(100, 0, 0, 150)); // Red overlay
             g2d.setColor(Color.WHITE);
             g2d.setFont(titleFont);
-            drawCenteredString(g2d, "GAME OVER", GRID_SIZE * CELL_SIZE / 2);
+            drawCenteredString(g2d, "GAME OVER", GRID_SIZE * CELL_SIZE / 2); // Game over text
             g2d.setFont(infoFont);
             drawCenteredString(g2d, "You survived " + wave + " waves", GRID_SIZE * CELL_SIZE / 2 + 40);
             drawCenteredString(g2d, "Press R to restart", GRID_SIZE * CELL_SIZE / 2 + 80);
         } else if (state == GameState.WIN) {
-            drawScreenOverlay(g2d, new Color(0, 100, 0, 150));
+            drawScreenOverlay(g2d, new Color(0, 100, 0, 150)); // Green overlay
             g2d.setColor(Color.WHITE);
             g2d.setFont(titleFont);
-            drawCenteredString(g2d, "YOU WIN!", GRID_SIZE * CELL_SIZE / 2);
+            drawCenteredString(g2d, "YOU WIN!", GRID_SIZE * CELL_SIZE / 2); // Win text
             g2d.setFont(infoFont);
             drawCenteredString(g2d, "You survived all 40 waves!", GRID_SIZE * CELL_SIZE / 2 + 40);
             drawCenteredString(g2d, "Press R to restart", GRID_SIZE * CELL_SIZE / 2 + 80);
         } else if (isPaused && state == GameState.BUILD) {
-            g2d.setColor(new Color(255, 255, 0, 150));
+            // Draw wave start prompt
+            g2d.setColor(new Color(255, 255, 0, 150)); // Yellow overlay
             g2d.fillRect(0, 0, getWidth(), 50);
             g2d.setColor(Color.BLACK);
             g2d.setFont(waveFont);
             drawCenteredString(g2d, "Press SPACE to start wave " + (wave + 1), 25);
         }
         
-        // Phase 2 effect
+        // Draw Phase 2 visual effects
         if (phase2Transition || state == GameState.PHASE2) {
             g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, phase2EffectAlpha));
-            g2d.setColor(new Color(255, 0, 0, 100));
+            g2d.setColor(new Color(255, 0, 0, 100)); // Red tint
             g2d.fillRect(0, 0, getWidth(), getHeight());
             
             // Draw fire effect borders
-            g2d.setColor(new Color(255, 100, 0));
+            g2d.setColor(new Color(255, 100, 0)); // Orange fire
             for (int i = 0; i < 20; i++) {
-                int height = 10 + (int)(Math.random() * 30);
-                g2d.fillRect(i * 40, 0, 20, height);
-                g2d.fillRect(i * 40, getHeight() - height, 20, height);
+                int height = 10 + (int)(Math.random() * 30); // Random flame height
+                g2d.fillRect(i * 40, 0, 20, height); // Top border
+                g2d.fillRect(i * 40, getHeight() - height, 20, height); // Bottom border
             }
-            g2d.setComposite(AlphaComposite.SrcOver);
+            g2d.setComposite(AlphaComposite.SrcOver); // Reset transparency
             
-            // Draw phase 2 message
+            // Draw Phase 2 message
             if (state == GameState.PHASE2) {
-                g2d.setColor(new Color(255, 255, 0));
+                g2d.setColor(new Color(255, 255, 0)); // Yellow text
                 g2d.setFont(waveFont);
                 drawCenteredString(g2d, "PHASE 2 ACTIVATED! CLICK ZOMBIES!", 50);
             }
         }
         
-        // Draw tower popup if needed
+        // Draw tower popup if a tower is selected
         if (selectedTowerInstance != null && selectedTowerPos != null) {
             popupRect = drawTowerPopup(g2d, selectedTowerPos, selectedTowerInstance);
         } else {
-            popupRect = null;
+            popupRect = null; // No active popup
         }
     }
     
+    // ====================== UI HELPERS ======================
+    /**
+     * Draws a screen overlay (used for game over and win states)
+     */
+    private void drawScreenOverlay(Graphics2D g2d, Color color) {
+        g2d.setColor(color);
+        g2d.fillRect(0, 0, getWidth(), getHeight());
+    }
+    
+    /**
+     * Draws centered text at specified vertical position
+     */
+    private void drawCenteredString(Graphics2D g2d, String text, int y) {
+        FontMetrics fm = g2d.getFontMetrics();
+        int x = (getWidth() - fm.stringWidth(text)) / 2; // Calculate center position
+        g2d.drawString(text, x, y);
+    }
+
+    /**
+     * Draws tower information popup
+     * @return Rectangle representing popup area
+     */
     private Rectangle drawTowerPopup(Graphics2D g2d, Point pos, Tower tower) {
+        // Calculate popup position (above tower)
         int popupX = pos.x * CELL_SIZE;
         int popupY = pos.y * CELL_SIZE - 150;
         
-        // Adjust position if near edge
+        // Adjust position if near screen edge
         if (popupX < 0) popupX = 0;
         if (popupX > getWidth() - 200) popupX = getWidth() - 200;
         if (popupY < 0) popupY = pos.y * CELL_SIZE + CELL_SIZE;
         
         // Draw popup background
-        g2d.setColor(new Color(50, 50, 70));
+        g2d.setColor(new Color(50, 50, 70)); // Dark blue-gray
         g2d.fillRect(popupX, popupY, 200, 150);
         g2d.setColor(Color.WHITE);
-        g2d.drawRect(popupX, popupY, 200, 150);
+        g2d.drawRect(popupX, popupY, 200, 150); // Border
         
-        // Draw tower info
+        // Draw tower information
         g2d.setFont(new Font("Arial", Font.BOLD, 14));
         g2d.drawString(tower.name + " (Lv " + tower.level + ")", popupX + 10, popupY + 20);
         g2d.setFont(new Font("Arial", Font.PLAIN, 12));
@@ -474,7 +545,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         g2d.drawString("Fire Rate: " + (60.0f / tower.maxCooldown) + "/sec", popupX + 10, popupY + 80);
         
         // Draw upgrade button
-        g2d.setColor(new Color(60, 180, 60));
+        g2d.setColor(new Color(60, 180, 60)); // Green button
         g2d.fillRect(popupX + 10, popupY + 100, 80, 30);
         g2d.setColor(Color.WHITE);
         int upgradeCost = tower.getUpgradeCost();
@@ -482,94 +553,108 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         g2d.drawString(upgradeText, popupX + 15, popupY + 120);
         
         // Draw sell button
-        g2d.setColor(new Color(180, 60, 60));
+        g2d.setColor(new Color(180, 60, 60)); // Red button
         g2d.fillRect(popupX + 110, popupY + 100, 80, 30);
         g2d.setColor(Color.WHITE);
-        int sellValue = (int)(tower.cost * 0.6);
+        int sellValue = (int)(tower.cost * 0.6); // 60% refund
         g2d.drawString("Sell ($" + sellValue + ")", popupX + 120, popupY + 120);
         
-        return new Rectangle(popupX, popupY, 200, 150);
+        return new Rectangle(popupX, popupY, 200, 150); // Return popup area
     }
     
-    private void drawScreenOverlay(Graphics2D g2d, Color color) {
-        g2d.setColor(color);
-        g2d.fillRect(0, 0, getWidth(), getHeight());
-    }
-    
-    private void drawCenteredString(Graphics2D g2d, String text, int y) {
-        FontMetrics fm = g2d.getFontMetrics();
-        int x = (getWidth() - fm.stringWidth(text)) / 2;
-        g2d.drawString(text, x, y);
-    }
-
+    // ====================== GAME LOGIC HELPERS ======================
+    /**
+     * Checks if a tower can be placed at given grid position
+     * @return true if placement is valid
+     */
     private boolean isValidPlacement(Point p) {
-        // Check if within bounds
+        // Check grid bounds
         if (p.x < 0 || p.y < 0 || p.x >= GRID_SIZE || p.y >= GRID_SIZE) return false;
         
-        // Check if on path
+        // Check if on zombie path
         if (pathGrid[p.x][p.y]) return false;
         
-        // Check if occupied
+        // Check if cell is occupied
         return !towers.containsKey(p);
     }
 
-    // Tower classes
+    // ====================== TOWER CLASSES ======================
+    /**
+     * Abstract base class for all towers
+     */
     private abstract class Tower {
-        int damage;
-        int range;
-        int cost;
-        int level = 1;
-        int cooldown = 0;
-        int maxCooldown;
-        Color color;
-        String name;
-        Image image;
+        int damage;         // Damage per shot
+        int range;          // Attack range in grid cells
+        int cost;           // Placement cost
+        int level = 1;      // Current upgrade level
+        int cooldown = 0;   // Current cooldown timer
+        int maxCooldown;    // Cooldown between attacks
+        Color color;        // Default color (if no image)
+        String name;        // Tower name
+        Image image;        // Custom image (if available)
         
+        /**
+         * @return Cost to upgrade, or 0 if max level
+         */
         abstract int getUpgradeCost();
+        
+        /**
+         * Upgrades the tower if possible
+         */
         abstract void upgrade();
         
+        /**
+         * Updates tower state and attacks zombies
+         */
         void update(List<Zombie> zombies, Point towerPos, List<Projectile> projectiles) {
+            // Handle cooldown
             if (cooldown > 0) {
                 cooldown--;
                 return;
             }
             
-            // Find target
+            // Find closest zombie in range
             Zombie target = null;
             float minDistance = Float.MAX_VALUE;
             
             for (Zombie z : zombies) {
+                // Calculate distance to zombie
                 float distance = (float)Math.sqrt(
                     Math.pow(towerPos.x * CELL_SIZE + CELL_SIZE/2 - z.x, 2) + 
                     Math.pow(towerPos.y * CELL_SIZE + CELL_SIZE/2 - z.y, 2)
                 );
                 
+                // Check if in range and closest
                 if (distance < range * CELL_SIZE && distance < minDistance) {
                     minDistance = distance;
                     target = z;
                 }
             }
             
+            // Attack if target found
             if (target != null) {
-                // Create projectile
+                // Create projectile aimed at target
                 projectiles.add(new Projectile(
-                    towerPos.x * CELL_SIZE + CELL_SIZE/2,
-                    towerPos.y * CELL_SIZE + CELL_SIZE/2,
+                    towerPos.x * CELL_SIZE + CELL_SIZE/2, // Tower center X
+                    towerPos.y * CELL_SIZE + CELL_SIZE/2, // Tower center Y
                     target,
                     damage,
                     color
                 ));
                 
-                cooldown = maxCooldown;
+                cooldown = maxCooldown; // Reset cooldown
             }
         }
         
+        /**
+         * Draws the tower at given grid position
+         */
         void draw(Graphics2D g, Point pos) {
-            // Draw tower image if available
+            // Draw custom image if available
             if (image != null) {
                 g.drawImage(image, pos.x * CELL_SIZE + 5, pos.y * CELL_SIZE + 5, null);
             } else {
-                // Fallback to colored square
+                // Fallback to colored rectangle
                 g.setColor(color);
                 g.fillRect(pos.x * CELL_SIZE + 5, pos.y * CELL_SIZE + 5, CELL_SIZE - 10, CELL_SIZE - 10);
             }
@@ -581,12 +666,13 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
     }
 
+    // Arrow Tower implementation
     private class ArrowTower extends Tower {
         ArrowTower() {
             damage = 2;
             range = 5;
             cost = ARROW_COST;
-            maxCooldown = 30;
+            maxCooldown = 30; // Shoots every 0.5 seconds (60 FPS)
             color = Color.GREEN;
             name = "Arrow Tower";
             image = arrowImage;
@@ -613,12 +699,13 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
     }
 
+    // Bomb Tower implementation
     private class BombTower extends Tower {
         BombTower() {
             damage = 5;
             range = 4;
             cost = BOMB_COST;
-            maxCooldown = 60;
+            maxCooldown = 60; // Shoots every 1 second
             color = Color.ORANGE;
             name = "Bomb Tower";
             image = bombImage;
@@ -631,19 +718,20 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         
         @Override
         void upgrade() {
-            // No upgrades
+            // No upgrades available
         }
     }
 
+    // Ice Tower implementation
     private class IceTower extends Tower {
-        float freezeTime;
+        float freezeTime; // Duration of slow effect
         
         IceTower() {
             damage = 1;
-            freezeTime = 0.3f;
+            freezeTime = 0.3f; // Seconds
             range = 4;
             cost = ICE_COST;
-            maxCooldown = 20;
+            maxCooldown = 20; // Shoots every ~0.33 seconds
             color = Color.CYAN;
             name = "Ice Tower";
             image = iceImage;
@@ -684,12 +772,13 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
     }
 
+    // Minigun Tower implementation
     private class MiniGunnerTower extends Tower {
         MiniGunnerTower() {
             damage = 3;
-            range = 4; // Reduced range
+            range = 4; // Reduced range for balance
             cost = MINIGUN_COST;
-            maxCooldown = 5;
+            maxCooldown = 5; // Very fast shooting (12 shots/second)
             color = Color.MAGENTA;
             name = "Minigunner";
             image = minigunImage;
@@ -726,12 +815,16 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
     }
 
+    // ====================== PROJECTILE CLASS ======================
+    /**
+     * Represents a projectile fired by a tower
+     */
     private class Projectile {
-        float x, y;
-        Zombie target;
-        int damage;
-        Color color;
-        float speed = 8.0f;
+        float x, y;         // Current position
+        Zombie target;      // Target zombie
+        int damage;         // Damage to deal
+        Color color;        // Visual color
+        float speed = 8.0f; // Movement speed
         
         Projectile(float startX, float startY, Zombie target, int damage, Color color) {
             this.x = startX;
@@ -741,63 +834,88 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             this.color = color;
         }
         
+        /**
+         * Updates projectile position
+         */
         void update() {
             if (target == null || target.health <= 0) return;
             
+            // Calculate direction to target
             float dx = target.x - x;
             float dy = target.y - y;
             float distance = (float)Math.sqrt(dx * dx + dy * dy);
             
+            // Move toward target
             if (distance < speed) {
+                // Reached target
                 x = target.x;
                 y = target.y;
             } else {
+                // Move in target direction
                 x += (dx / distance) * speed;
                 y += (dy / distance) * speed;
             }
         }
         
+        /**
+         * @return true if projectile reached its target
+         */
         boolean hasReachedTarget() {
             if (target == null) return true;
             float dx = target.x - x;
             float dy = target.y - y;
-            return (dx * dx + dy * dy) < 100; // 10px radius
+            return (dx * dx + dy * dy) < 100; // Within 10px radius
         }
         
+        /**
+         * @return true if projectile is off-screen
+         */
         boolean isOffScreen() {
             return x < 0 || x > getWidth() || y < 0 || y > getHeight();
         }
         
+        /**
+         * Applies damage to target and creates hit effect
+         */
         void hitTarget() {
             if (target != null) {
-                target.health -= damage;
+                target.health -= damage; // Apply damage
+                
+                // Handle zombie death
                 if (target.health <= 0) {
-                    coins += target.type.reward;
-                    zombies.remove(target);
-                    createBloodEffect(target.x, target.y);
+                    coins += target.type.reward; // Reward coins
+                    zombies.remove(target); // Remove zombie
+                    createBloodEffect(target.x, target.y); // Blood effect
                 }
                 
-                // Create hit effect
+                // Create hit particles
                 for (int i = 0; i < 5; i++) {
                     particles.add(new Particle(x, y, color));
                 }
             }
         }
         
+        /**
+         * Draws the projectile
+         */
         void draw(Graphics2D g) {
             g.setColor(color);
-            g.fillOval((int)x - 5, (int)y - 5, 10, 10);
+            g.fillOval((int)x - 5, (int)y - 5, 10, 10); // 10px circle
         }
     }
 
+    // ====================== ZOMBIE CLASS ======================
+    /**
+     * Represents a zombie enemy
+     */
     private class Zombie {
-        ZombieType type;
-        float x, y;
-        int health;
-        int damage;
-        float speed;
-        float baseSpeed;
-        float slowTimer = 0;
+        ZombieType type;    // Zombie type
+        float x, y;         // Current position
+        int health;         // Current health
+        int damage;         // Damage to base
+        float speed;        // Current movement speed
+        float baseSpeed;    // Base movement speed
+        float slowTimer = 0; // Slow effect timer
         
         Zombie(ZombieType type) {
             this.type = type;
@@ -805,33 +923,47 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             this.damage = type.damage;
             this.speed = type.speed;
             this.baseSpeed = type.speed;
+            // Start position at right side of screen
             this.x = GRID_SIZE * CELL_SIZE;
-            this.y = 7 * CELL_SIZE + CELL_SIZE/2;
+            this.y = 7 * CELL_SIZE + CELL_SIZE/2; // Center of path
         }
         
+        /**
+         * Applies slow effect to zombie
+         * @param duration Slow duration in seconds
+         */
         void slowDown(float duration) {
-            speed = baseSpeed * 0.3f;
-            slowTimer = duration * 60; // Convert seconds to frames
+            speed = baseSpeed * 0.3f; // Reduce speed to 30%
+            slowTimer = duration * 60; // Convert seconds to frames (60 FPS)
         }
         
+        /**
+         * Updates zombie position and state
+         */
         void update() {
+            // Handle slow effect timer
             if (slowTimer > 0) {
                 slowTimer--;
                 if (slowTimer == 0) {
-                    speed = baseSpeed;
+                    speed = baseSpeed; // Restore normal speed
                 }
             }
             
-            x -= speed;
+            x -= speed; // Move left toward base
         }
         
+        /**
+         * Draws the zombie
+         */
         void draw(Graphics2D g) {
             g.setColor(type.color);
-            g.fillOval((int)x - 15, (int)y - 15, 30, 30);
+            g.fillOval((int)x - 15, (int)y - 15, 30, 30); // 30px circle
             
-            // Draw health bar
+            // Draw health bar background
             g.setColor(Color.RED);
             g.fillRect((int)x - 15, (int)y - 25, 30, 5);
+            
+            // Draw health bar foreground
             g.setColor(Color.GREEN);
             float healthPercent = (float)health / type.health;
             g.fillRect((int)x - 15, (int)y - 25, (int)(30 * healthPercent), 5);
@@ -850,48 +982,64 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
     }
     
+    // ====================== PARTICLE CLASS ======================
+    /**
+     * Represents a visual particle effect
+     */
     private class Particle {
-        float x, y;
-        float vx, vy;
-        Color color;
-        int life;
+        float x, y;         // Position
+        float vx, vy;       // Velocity
+        Color color;        // Particle color
+        int life;           // Remaining lifetime
         
         Particle(float x, float y, Color color) {
             this.x = x;
             this.y = y;
             this.color = color;
-            this.vx = (float)(Math.random() * 4 - 2);
-            this.vy = (float)(Math.random() * 4 - 2);
-            this.life = 20 + (int)(Math.random() * 30);
+            this.vx = (float)(Math.random() * 4 - 2); // Random X velocity (-2 to 2)
+            this.vy = (float)(Math.random() * 4 - 2); // Random Y velocity (-2 to 2)
+            this.life = 20 + (int)(Math.random() * 30); // Random lifetime (20-50 frames)
         }
         
+        /**
+         * Updates particle position and state
+         */
         void update() {
-            x += vx;
+            x += vx; // Apply velocity
             y += vy;
-            vy += 0.1; // Gravity
-            life--;
+            vy += 0.1; // Gravity effect
+            life--; // Decrease lifetime
         }
         
+        /**
+         * @return true if particle is still active
+         */
         boolean isAlive() {
             return life > 0;
         }
         
+        /**
+         * Draws the particle with fading effect
+         */
         void draw(Graphics2D g) {
-            float alpha = (float)life / 50;
+            float alpha = (float)life / 50; // Calculate fade based on remaining life
             if (alpha > 1) alpha = 1;
+            // Apply alpha to color
             g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), (int)(alpha * 255)));
-            g.fillOval((int)x, (int)y, 5, 5);
+            g.fillOval((int)x, (int)y, 5, 5); // 5px circle
         }
     }
 
-    // Input handling
+    // ====================== INPUT HANDLING ======================
     @Override
     public void mouseMoved(MouseEvent e) {
+        // Update hovered grid cell
         hoverCell = new Point(e.getX() / CELL_SIZE, e.getY() / CELL_SIZE);
     }
     
     @Override
     public void mouseDragged(MouseEvent e) {
+        // Update drag position if dragging a tower
         if (draggedTower != null) {
             dragPoint = new Point(e.getX() / CELL_SIZE, e.getY() / CELL_SIZE);
         }
@@ -911,28 +1059,30 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                 popupRect = null;
             }
             
+            // Phase 2 click damage
             if (state == GameState.PHASE2) {
-                // Handle click damage to zombies
                 for (Zombie z : new ArrayList<>(zombies)) {
+                    // Calculate distance to zombie
                     double dist = Math.sqrt(Math.pow(z.x - e.getX(), 2) + Math.pow(z.y - e.getY(), 2));
-                    if (dist < 30) {
-                        z.health -= clickDamage;
-                        coins += 2; // Small coin reward for clicks
+                    if (dist < 30) { // Within 30px radius
+                        z.health -= clickDamage; // Apply damage
+                        coins += 2; // Small reward for clicking
                         
-                        // Create hit effect
+                        // Create click effect particles
                         for (int i = 0; i < 5; i++) {
                             particles.add(new Particle(e.getX(), e.getY(), Color.YELLOW));
                         }
                         
+                        // Handle zombie death
                         if (z.health <= 0) {
-                            coins += z.type.reward;
+                            coins += z.type.reward; // Full reward
                             zombies.remove(z);
                             createBloodEffect(z.x, z.y);
                         }
                     }
                 }
             } else if (draggedTower == null) {
-                // Start dragging a new tower if we have enough money
+                // Start dragging a new tower
                 int cost = 0;
                 switch (selectedTower) {
                     case ARROW: cost = ARROW_COST; break;
@@ -941,21 +1091,24 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                     case MINIGUN: cost = MINIGUN_COST; break;
                 }
                 
+                // Check if player can afford tower
                 if (coins >= cost) {
+                    // Create new tower instance
                     switch (selectedTower) {
                         case ARROW: draggedTower = new ArrowTower(); break;
                         case BOMB: draggedTower = new BombTower(); break;
                         case ICE: draggedTower = new IceTower(); break;
                         case MINIGUN: draggedTower = new MiniGunnerTower(); break;
                     }
-                    dragPoint = gridPoint;
+                    dragPoint = gridPoint; // Set initial drag position
                 }
             } else {
-                // Place tower
+                // Place dragged tower
                 if (isValidPlacement(dragPoint)) {
-                    towers.put(dragPoint, draggedTower);
-                    coins -= draggedTower.cost;
+                    towers.put(dragPoint, draggedTower); // Add to tower map
+                    coins -= draggedTower.cost; // Deduct cost
                 }
+                // Reset drag state
                 draggedTower = null;
                 dragPoint = null;
             }
@@ -988,7 +1141,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                 
                 int upgradeCost = selectedTowerInstance.getUpgradeCost();
                 if (upgradeCost > 0 && coins >= upgradeCost) {
-                    selectedTowerInstance.upgrade();
+                    selectedTowerInstance.upgrade(); // Perform upgrade
                 }
             }
             
@@ -996,9 +1149,9 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             if (mouseX > popupX + 110 && mouseX < popupX + 190 && 
                 mouseY > popupY + 100 && mouseY < popupY + 130) {
                 
-                int sellValue = (int)(selectedTowerInstance.cost * 0.6);
+                int sellValue = (int)(selectedTowerInstance.cost * 0.6); // 60% refund
                 coins += sellValue;
-                towers.remove(selectedTowerPos);
+                towers.remove(selectedTowerPos); // Remove tower
                 selectedTowerInstance = null;
                 selectedTowerPos = null;
                 popupRect = null;
@@ -1010,32 +1163,33 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
     public void keyPressed(KeyEvent e) {
         switch (e.getKeyCode()) {
             case KeyEvent.VK_1:
-                selectedTower = TowerType.ARROW;
+                selectedTower = TowerType.ARROW; // Select Arrow Tower
                 break;
             case KeyEvent.VK_2:
-                selectedTower = TowerType.BOMB;
+                selectedTower = TowerType.BOMB; // Select Bomb Tower
                 break;
             case KeyEvent.VK_3:
-                selectedTower = TowerType.ICE;
+                selectedTower = TowerType.ICE; // Select Ice Tower
                 break;
             case KeyEvent.VK_4:
-                selectedTower = TowerType.MINIGUN;
+                selectedTower = TowerType.MINIGUN; // Select Minigun Tower
                 break;
             case KeyEvent.VK_SPACE:
                 if (state == GameState.BUILD) {
-                    startNextWave();
+                    startNextWave(); // Start next wave
                 } else if (state == GameState.COMBAT) {
-                    isPaused = !isPaused;
+                    isPaused = !isPaused; // Toggle pause
                 }
                 break;
             case KeyEvent.VK_T:
                 if (selectedTowerInstance != null) {
+                    // Upgrade selected tower
                     int upgradeCost = selectedTowerInstance.getUpgradeCost();
                     if (upgradeCost > 0 && coins >= upgradeCost) {
                         selectedTowerInstance.upgrade();
                     }
                 } else if (state == GameState.PHASE2 && coins >= 50) {
-                    // Upgrade click damage in phase 2
+                    // Upgrade click damage in Phase 2
                     coins -= 50;
                     clickUpgradeLevel++;
                     clickDamage = 1 + 3 * clickUpgradeLevel;
@@ -1043,8 +1197,8 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                 break;
             case KeyEvent.VK_Z:
                 if (selectedTowerInstance != null) {
-                    // Sell tower for 60% of cost
-                    int refund = (int)(selectedTowerInstance.cost * 0.6);
+                    // Sell selected tower
+                    int refund = (int)(selectedTowerInstance.cost * 0.6); // 60% refund
                     coins += refund;
                     
                     // Find and remove the tower
@@ -1055,13 +1209,14 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                             break;
                         }
                     }
+                    // Reset selection
                     selectedTowerInstance = null;
                     selectedTowerPos = null;
                     popupRect = null;
                 }
                 break;
             case KeyEvent.VK_R:
-                // Restart game
+                // Restart game if game over or won
                 if (state == GameState.GAME_OVER || state == GameState.WIN) {
                     resetGame();
                 }
@@ -1075,6 +1230,10 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
     }
     
+    // ====================== GAME MANAGEMENT ======================
+    /**
+     * Resets the game to initial state
+     */
     private void resetGame() {
         state = GameState.BUILD;
         wave = 0;
@@ -1092,19 +1251,20 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         phase2EffectAlpha = 0f;
     }
     
-    // Unused event methods
+    // ====================== UNUSED EVENT METHODS ======================
     @Override public void mouseClicked(MouseEvent e) {}
     @Override public void mouseEntered(MouseEvent e) {}
     @Override public void mouseExited(MouseEvent e) {}
     @Override public void keyTyped(KeyEvent e) {}
     @Override public void keyReleased(KeyEvent e) {}
     
+    // ====================== MAIN METHOD ======================
     public static void main(String[] args) {
-        JFrame frame = new JFrame("Die to Live");
+        JFrame frame = new JFrame("Die to Live"); // Create game window
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.add(new DieToLive());
-        frame.pack();
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
+        frame.add(new DieToLive()); // Add game panel
+        frame.pack(); // Size window to fit game
+        frame.setLocationRelativeTo(null); // Center window
+        frame.setVisible(true); // Show window
     }
 }
