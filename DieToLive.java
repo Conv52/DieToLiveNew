@@ -20,7 +20,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
     private static final int GRID_SIZE = 15;          // Size of the game grid (15x15 cells)
     private static final int CELL_SIZE = 50;           // Size of each grid cell in pixels
     private static final int BASE_HEALTH = 100;        // Starting health for player's base
-    private static final int START_COINS = 100;         // Starting coins for the player
+    private static final int START_COINS = 100;        // Starting coins for the player
     
     // ====================== GAME STATE VARIABLES ======================
     private enum GameState { BUILD, COMBAT, PHASE2, GAME_OVER, WIN } // Possible game states
@@ -41,8 +41,14 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
     
     // ====================== ZOMBIE SYSTEM ======================
     private final List<Zombie> zombies = new ArrayList<>(); // List of active zombies
-    // Path that zombies follow (from right to left at y=7)
-    private final int[][] path = {{0,7}, {14,7}}; 
+    // Twisted path that zombies follow
+    private final int[][] path = {
+        {14, 7}, {13, 7}, {12, 7}, {12, 6}, {12, 5}, {12, 4}, 
+        {11, 4}, {10, 4}, {9, 4}, {8, 4}, {8, 5}, {8, 6}, 
+        {8, 7}, {8, 8}, {8, 9}, {8, 10}, {7, 10}, {6, 10}, 
+        {5, 10}, {4, 10}, {4, 9}, {4, 8}, {4, 7}, {3, 7}, 
+        {2, 7}, {1, 7}, {0, 7}
+    };
     private int zombiesToSpawn = 0;                    // Zombies remaining to spawn in current wave
     private int zombieSpawnTimer = 0;                  // Timer between zombie spawns
     
@@ -109,6 +115,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
     
     // ====================== TOWER IMAGES ======================
     private Image arrowImage, bombImage, iceImage, minigunImage; // Images for towers
+    private Image backgroundImage; // Background image
     
     // ====================== POPUP MANAGEMENT ======================
     private Rectangle popupRect = null; // Rectangle area of the active tower popup
@@ -125,21 +132,11 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         setFocusable(true); // Ensure panel can receive key events
         
         // Initialize path grid - mark cells that are part of the zombie path
-        for (int i = 0; i < path.length - 1; i++) {
-            int[] p1 = path[i];
-            int[] p2 = path[i+1];
-            if (p1[0] == p2[0]) { // Vertical path segment
-                int minY = Math.min(p1[1], p2[1]);
-                int maxY = Math.max(p1[1], p2[1]);
-                for (int y = minY; y <= maxY; y++) {
-                    pathGrid[p1[0]][y] = true;
-                }
-            } else { // Horizontal path segment
-                int minX = Math.min(p1[0], p2[0]);
-                int maxX = Math.max(p1[0], p2[0]);
-                for (int x = minX; x <= maxX; x++) {
-                    pathGrid[x][p1[1]] = true;
-                }
+        for (int[] point : path) {
+            int x = point[0];
+            int y = point[1];
+            if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
+                pathGrid[x][y] = true;
             }
         }
         
@@ -152,6 +149,14 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         } catch (IOException e) {
             System.out.println("Tower images not found, using default graphics");
             arrowImage = bombImage = iceImage = minigunImage = null;
+        }
+        
+        // Load background image if available
+        try {
+            backgroundImage = ImageIO.read(new File("background.jpg"));
+        } catch (IOException e) {
+            System.out.println("Background image not found, using solid color");
+            backgroundImage = null;
         }
         
         // Start game loop thread
@@ -341,21 +346,33 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         // Draw background
-        g2d.setColor(new Color(20, 30, 20)); // Dark green background
-        g2d.fillRect(0, 0, getWidth(), getHeight());
+        if (backgroundImage != null) {
+            g2d.drawImage(backgroundImage, 0, 0, getWidth(), getHeight(), null);
+        } else {
+            // Fallback to solid color
+            g2d.setColor(new Color(15, 25, 15)); // Dark forest green
+            g2d.fillRect(0, 0, getWidth(), getHeight());
+        }
         
-        // Draw grid cells
+        // Draw grid cells with improved colors
         for (int x = 0; x < GRID_SIZE; x++) {
             for (int y = 0; y < GRID_SIZE; y++) {
-                g2d.setColor(new Color(40, 50, 40)); // Grid cell color
+                // Create grass-like pattern
+                Color grassColor = new Color(40, 60, 30);
+                if ((x + y) % 2 == 0) {
+                    grassColor = new Color(35, 55, 25); // Alternate shade
+                }
+                g2d.setColor(grassColor);
                 g2d.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                g2d.setColor(new Color(30, 40, 30)); // Grid line color
+                
+                // Draw subtle grid lines
+                g2d.setColor(new Color(30, 45, 20)); // Dark green grid lines
                 g2d.drawRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
             }
         }
 
-        // Draw zombie path
-        g2d.setColor(new Color(100, 70, 30)); // Brown path color
+        // Draw zombie path with improved coloring
+        g2d.setColor(new Color(100, 80, 40)); // Rich brown path color
         for (int i = 0; i < path.length - 1; i++) {
             int[] p1 = path[i];
             int[] p2 = path[i+1];
@@ -375,10 +392,25 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                 }
             }
         }
+        
+        // Draw path borders
+        g2d.setColor(new Color(70, 50, 20)); // Darker brown for borders
+        for (int[] point : path) {
+            int x = point[0];
+            int y = point[1];
+            g2d.drawRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
 
-        // Draw player base
-        g2d.setColor(new Color(180, 0, 0)); // Red base
+        // Draw player base with improved design
+        g2d.setColor(new Color(180, 0, 0)); // Base red
         g2d.fillRect(0, 7 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        
+        // Draw base details
+        g2d.setColor(new Color(150, 0, 0)); // Darker red for details
+        g2d.fillRect(0, 7 * CELL_SIZE, 10, CELL_SIZE);
+        g2d.fillRect(CELL_SIZE - 10, 7 * CELL_SIZE, 10, CELL_SIZE);
+        g2d.fillRect(0, 7 * CELL_SIZE + CELL_SIZE/2 - 5, CELL_SIZE, 10);
+        
         g2d.setColor(Color.WHITE);
         g2d.setFont(new Font("Arial", Font.BOLD, 12));
         g2d.drawString("BASE", 5, 7 * CELL_SIZE + 25); // Base label
@@ -460,7 +492,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             drawCenteredString(g2d, "Press R to restart", GRID_SIZE * CELL_SIZE / 2 + 80);
         } else if (isPaused && state == GameState.BUILD) {
             // Draw wave start prompt
-            g2d.setColor(new Color(255, 255, 0, 150)); // Yellow overlay
+            g2d.setColor(new Color(255, 200, 0, 180)); // Gold overlay
             g2d.fillRect(0, 0, getWidth(), 50);
             g2d.setColor(Color.BLACK);
             g2d.setFont(waveFont);
@@ -531,12 +563,13 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         if (popupY < 0) popupY = pos.y * CELL_SIZE + CELL_SIZE;
         
         // Draw popup background
-        g2d.setColor(new Color(50, 50, 70)); // Dark blue-gray
+        g2d.setColor(new Color(50, 50, 70, 220)); // Semi-transparent dark blue-gray
         g2d.fillRect(popupX, popupY, 200, 150);
-        g2d.setColor(Color.WHITE);
-        g2d.drawRect(popupX, popupY, 200, 150); // Border
+        g2d.setColor(new Color(100, 100, 150)); // Light blue border
+        g2d.drawRect(popupX, popupY, 200, 150);
         
         // Draw tower information
+        g2d.setColor(Color.WHITE);
         g2d.setFont(new Font("Arial", Font.BOLD, 14));
         g2d.drawString(tower.name + " (Lv " + tower.level + ")", popupX + 10, popupY + 20);
         g2d.setFont(new Font("Arial", Font.PLAIN, 12));
