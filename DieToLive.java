@@ -41,12 +41,10 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
     
     // ====================== ZOMBIE SYSTEM ======================
     private final List<Zombie> zombies = new ArrayList<>(); // List of active zombies
-    // Twisted path that zombies follow
+    // Twisted path that zombies follow (semicircle shape)
     private final int[][] path = {
-        {14, 7}, {13, 7}, {12, 7}, {12, 6}, {12, 5}, {12, 4}, 
-        {11, 4}, {10, 4}, {9, 4}, {8, 4}, {8, 5}, {8, 6}, 
-        {8, 7}, {8, 8}, {8, 9}, {8, 10}, {7, 10}, {6, 10}, 
-        {5, 10}, {4, 10}, {4, 9}, {4, 8}, {4, 7}, {3, 7}, 
+        {14, 7}, {13, 7}, {12, 7}, {11, 6}, {10, 5}, {9, 4}, 
+        {8, 4}, {7, 5}, {6, 6}, {5, 7}, {4, 7}, {3, 7}, 
         {2, 7}, {1, 7}, {0, 7}
     };
     private int zombiesToSpawn = 0;                    // Zombies remaining to spawn in current wave
@@ -87,8 +85,8 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
      * - health: Hit points
      */
     private enum ZombieType {
-        BASIC(10, 1, 2, Color.GRAY, 20),     // Basic zombie
-        SPEEDY(7, 2, 1, Color.CYAN, 15),      // Fast but weak
+        BASIC(10, 1, 1, Color.GRAY, 20),     // Basic zombie
+        SPEEDY(7, 2, 2, Color.CYAN, 15),      // Fast but weak
         ABNORMAL(15, 3, 1, Color.RED, 40),    // Strong against bomb towers
         CHARGED(20, 5, 1, Color.YELLOW, 60);   // Tough and powerful
         
@@ -178,7 +176,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             
             // Update game state based on elapsed time
             while (delta >= 1) {
-                tick(); // Update game logic
+                if (!isPaused) tick(); // Only update when not paused
                 delta--;
             }
             
@@ -218,7 +216,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         }
         
         // Wave progression logic
-        if (!isPaused && state == GameState.COMBAT && zombies.isEmpty() && zombiesToSpawn == 0) {
+        if (state == GameState.COMBAT && zombies.isEmpty() && zombiesToSpawn == 0) {
             // Return to build phase after clearing wave
             state = GameState.BUILD;
             coins += 30 + 15 * wave; // Reward coins for surviving the wave
@@ -241,7 +239,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             z.update();
             
             // Check if zombie reached base
-            if (z.x <= CELL_SIZE) {
+            if (z.pathIndex >= path.length - 1) {
                 baseHealth -= z.damage; // Damage the base
                 createBloodEffect(z.x, z.y); // Visual effect
                 zit.remove(); // Remove zombie
@@ -279,6 +277,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         // Win condition check
         if (wave >= 40) {
             state = GameState.WIN;
+            isPaused = true;
         }
     }
 
@@ -323,6 +322,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             baseHealth = 50; // Give player health for Phase 2
         } else {
             state = GameState.GAME_OVER; // Game over if base destroyed before wave 20
+            isPaused = true;
         }
     }
 
@@ -949,6 +949,7 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         float speed;        // Current movement speed
         float baseSpeed;    // Base movement speed
         float slowTimer = 0; // Slow effect timer
+        int pathIndex = 0;  // Current position in path
         
         Zombie(ZombieType type) {
             this.type = type;
@@ -956,9 +957,9 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             this.damage = type.damage;
             this.speed = type.speed;
             this.baseSpeed = type.speed;
-            // Start position at right side of screen
-            this.x = GRID_SIZE * CELL_SIZE;
-            this.y = 7 * CELL_SIZE + CELL_SIZE/2; // Center of path
+            // Start position at first path point
+            this.x = path[0][0] * CELL_SIZE + CELL_SIZE/2;
+            this.y = path[0][1] * CELL_SIZE + CELL_SIZE/2;
         }
         
         /**
@@ -982,7 +983,28 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                 }
             }
             
-            x -= speed; // Move left toward base
+            // Move along the path
+            if (pathIndex < path.length - 1) {
+                int nextX = path[pathIndex + 1][0] * CELL_SIZE + CELL_SIZE/2;
+                int nextY = path[pathIndex + 1][1] * CELL_SIZE + CELL_SIZE/2;
+                
+                // Calculate direction to next point
+                float dx = nextX - x;
+                float dy = nextY - y;
+                float distance = (float)Math.sqrt(dx * dx + dy * dy);
+                
+                // Move toward next point
+                if (distance < speed) {
+                    // Reached next point
+                    x = nextX;
+                    y = nextY;
+                    pathIndex++;
+                } else {
+                    // Move in direction of next point
+                    x += (dx / distance) * speed;
+                    y += (dy / distance) * speed;
+                }
+            }
         }
         
         /**
@@ -1094,12 +1116,14 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             
             // Phase 2 click damage
             if (state == GameState.PHASE2) {
+                boolean hitZombie = false;
                 for (Zombie z : new ArrayList<>(zombies)) {
                     // Calculate distance to zombie
                     double dist = Math.sqrt(Math.pow(z.x - e.getX(), 2) + Math.pow(z.y - e.getY(), 2));
                     if (dist < 30) { // Within 30px radius
                         z.health -= clickDamage; // Apply damage
                         coins += 2; // Small reward for clicking
+                        hitZombie = true;
                         
                         // Create click effect particles
                         for (int i = 0; i < 5; i++) {
@@ -1112,6 +1136,13 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
                             zombies.remove(z);
                             createBloodEffect(z.x, z.y);
                         }
+                    }
+                }
+                
+                // Visual feedback for missed clicks
+                if (!hitZombie) {
+                    for (int i = 0; i < 3; i++) {
+                        particles.add(new Particle(e.getX(), e.getY(), Color.WHITE));
                     }
                 }
             } else if (draggedTower == null) {
@@ -1169,8 +1200,8 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             int mouseY = e.getY();
             
             // Check if upgrade button clicked
-            if (mouseX > popupX + 10 && mouseX < popupX + 90 && 
-                mouseY > popupY + 100 && mouseY < popupY + 130) {
+            if (mouseX >= popupX + 10 && mouseX <= popupX + 90 && 
+                mouseY >= popupY + 100 && mouseY <= popupY + 130) {
                 
                 int upgradeCost = selectedTowerInstance.getUpgradeCost();
                 if (upgradeCost > 0 && coins >= upgradeCost) {
@@ -1179,8 +1210,8 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
             }
             
             // Check if sell button clicked
-            if (mouseX > popupX + 110 && mouseX < popupX + 190 && 
-                mouseY > popupY + 100 && mouseY < popupY + 130) {
+            if (mouseX >= popupX + 110 && mouseX <= popupX + 190 && 
+                mouseY >= popupY + 100 && mouseY <= popupY + 130) {
                 
                 int sellValue = (int)(selectedTowerInstance.cost * 0.6); // 60% refund
                 coins += sellValue;
@@ -1282,6 +1313,8 @@ public class DieToLive extends JPanel implements Runnable, MouseListener, MouseM
         isPaused = true;
         phase2Transition = false;
         phase2EffectAlpha = 0f;
+        clickDamage = 1;
+        clickUpgradeLevel = 0;
     }
     
     // ====================== UNUSED EVENT METHODS ======================
